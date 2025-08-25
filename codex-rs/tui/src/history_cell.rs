@@ -831,11 +831,24 @@ pub(crate) fn new_mcp_tools_output(
             ]));
         }
 
+        // If configured, show disallowed tools. Whitelisted tools are reflected
+        // in the available tools list and do not get their own row.
+        if let Some(disallow) = cfg.tools_disallow.as_ref()
+            && !disallow.is_empty()
+        {
+            let mut disallow_sorted = disallow.clone();
+            disallow_sorted.sort();
+            lines.push(Line::from(vec![
+                "    • Disallowed tools: ".into(),
+                disallow_sorted.join(", ").into(),
+            ]));
+        }
+
         if names.is_empty() {
-            lines.push(Line::from("    • Tools: (none)"));
+            lines.push(Line::from("    • Available tools: (none)"));
         } else {
             lines.push(Line::from(vec![
-                "    • Tools: ".into(),
+                "    • Available tools: ".into(),
                 names.join(", ").into(),
             ]));
         }
