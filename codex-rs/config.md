@@ -359,6 +359,13 @@ Should be represented as follows in `~/.codex/config.toml`:
 command = "npx"
 args = ["-y", "mcp-server"]
 env = { "API_KEY" = "value" }
+
+# Optionally restrict tools from this server:
+# - If `tools_allow` is set and non-empty, only these tool names are exposed.
+# - `tools_disallow` hides listed tool names. It applies after `tools_allow`.
+# Matching is exact against the MCP tool `name` reported by tools/list.
+tools_allow = ["format_code", "lint"]
+tools_disallow = ["run_terraform", "deploy_to_prod"]
 ```
 
 ## disable_response_storage

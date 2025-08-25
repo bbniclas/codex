@@ -20,6 +20,17 @@ pub struct McpServerConfig {
 
     #[serde(default)]
     pub env: Option<HashMap<String, String>>,
+
+    /// Optional allowlist of tools to expose from this MCP server.
+    /// If set and non-empty, only tools whose `name` exactly matches an
+    /// entry in this list will be surfaced to the agent.
+    #[serde(default)]
+    pub tools_allow: Option<Vec<String>>,
+
+    /// Optional blocklist of tools to hide from this MCP server.
+    /// Applied after `tools_allow` (if any).
+    #[serde(default)]
+    pub tools_disallow: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug, Copy, Clone, PartialEq)]

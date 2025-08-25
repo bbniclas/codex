@@ -39,6 +39,30 @@ const MAX_TOOL_NAME_LENGTH: usize = 64;
 /// Timeout for the `tools/list` request.
 const LIST_TOOLS_TIMEOUT: Duration = Duration::from_secs(10);
 
+#[derive(Clone, Default)]
+struct ServerFilters {
+    allow: Option<Vec<String>>, // exact names
+    deny: Option<Vec<String>>,  // exact names
+}
+
+fn apply_server_filters(tools: &mut Vec<ToolInfo>, filters: &HashMap<String, ServerFilters>) {
+    tools.retain(|tool_info| {
+        if let Some(f) = filters.get(&tool_info.server_name) {
+            if let Some(allow) = &f.allow {
+                if !allow.is_empty() && !allow.iter().any(|n| n == &tool_info.tool_name) {
+                    return false;
+                }
+            }
+            if let Some(deny) = &f.deny {
+                if deny.iter().any(|n| n == &tool_info.tool_name) {
+                    return false;
+                }
+            }
+        }
+        true
+    });
+}
+
 /// Map that holds a startup error for every MCP server that could **not** be
 /// spawned successfully.
 pub type ClientStartErrors = HashMap<String, anyhow::Error>;
@@ -115,6 +139,9 @@ impl McpConnectionManager {
         let mut join_set = JoinSet::new();
         let mut errors = ClientStartErrors::new();
 
+        // Capture per-server tool filters before moving cfg into tasks.
+        let mut server_filters: HashMap<String, ServerFilters> = HashMap::new();
+
         for (server_name, cfg) in mcp_servers {
             // Validate server name before spawning
             if !is_valid_mcp_server_name(&server_name) {
@@ -126,8 +153,22 @@ impl McpConnectionManager {
                 continue;
             }
 
+            server_filters.insert(
+                server_name.clone(),
+                ServerFilters {
+                    allow: cfg.tools_allow.clone(),
+                    deny: cfg.tools_disallow.clone(),
+                },
+            );
+
             join_set.spawn(async move {
-                let McpServerConfig { command, args, env } = cfg;
+                let McpServerConfig {
+                    command,
+                    args,
+                    env,
+                    tools_allow: _,
+                    tools_disallow: _,
+                } = cfg;
                 let client_res = McpClient::new_stdio_client(
                     command.into(),
                     args.into_iter().map(OsString::from).collect(),
@@ -184,7 +225,8 @@ impl McpConnectionManager {
             }
         }
 
-        let all_tools = list_all_tools(&clients).await?;
+        let mut all_tools = list_all_tools(&clients).await?;
+        apply_server_filters(&mut all_tools, &server_filters);
 
         let tools = qualify_tools(all_tools);
 
@@ -365,5 +407,93 @@ mod tests {
             keys[1],
             "my_server__yet_another_e1c3987bd9c50b826cbe1687966f79f0c602d19ca"
         );
+    }
+
+    #[test]
+    fn test_apply_server_filters_allow_only() {
+        let mut tools = vec![
+            create_test_tool("s1", "a"),
+            create_test_tool("s1", "b"),
+            create_test_tool("s2", "x"),
+        ];
+
+        let mut filters = HashMap::new();
+        filters.insert(
+            "s1".to_string(),
+            ServerFilters {
+                allow: Some(vec!["a".to_string()]),
+                deny: None,
+            },
+        );
+
+        apply_server_filters(&mut tools, &filters);
+
+        let names: Vec<(String, String)> = tools
+            .iter()
+            .map(|t| (t.server_name.clone(), t.tool_name.clone()))
+            .collect();
+
+        assert_eq!(
+            names,
+            vec![("s1".into(), "a".into()), ("s2".into(), "x".into())]
+        );
+    }
+
+    #[test]
+    fn test_apply_server_filters_deny_only() {
+        let mut tools = vec![
+            create_test_tool("s1", "a"),
+            create_test_tool("s2", "x"),
+            create_test_tool("s2", "y"),
+        ];
+
+        let mut filters = HashMap::new();
+        filters.insert(
+            "s2".to_string(),
+            ServerFilters {
+                allow: None,
+                deny: Some(vec!["x".to_string()]),
+            },
+        );
+
+        apply_server_filters(&mut tools, &filters);
+
+        let names: Vec<(String, String)> = tools
+            .iter()
+            .map(|t| (t.server_name.clone(), t.tool_name.clone()))
+            .collect();
+
+        assert_eq!(
+            names,
+            vec![("s1".into(), "a".into()), ("s2".into(), "y".into())]
+        );
+    }
+
+    #[test]
+    fn test_apply_server_filters_allow_then_deny() {
+        let mut tools = vec![
+            create_test_tool("s1", "a"),
+            create_test_tool("s1", "b"),
+            create_test_tool("s1", "c"),
+        ];
+
+        let mut filters = HashMap::new();
+        filters.insert(
+            "s1".to_string(),
+            ServerFilters {
+                allow: Some(vec!["a".to_string(), "b".to_string()]),
+                deny: Some(vec!["b".to_string()]),
+            },
+        );
+
+        apply_server_filters(&mut tools, &filters);
+
+        let names: Vec<String> = tools
+            .iter()
+            .filter(|t| t.server_name == "s1")
+            .map(|t| t.tool_name.clone())
+            .collect();
+
+        assert_eq!(names, vec!["a".to_string()]);
     }
 }

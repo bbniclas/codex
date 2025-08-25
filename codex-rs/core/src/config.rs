@@ -983,6 +983,32 @@ exclude_slash_tmp = true
         );
     }
 
+    #[test]
+    fn test_mcp_server_tool_filters_parsing() {
+        let toml = r#"
+[mcp_servers.demo]
+command = "npx"
+args = ["-y", "demo-server"]
+tools_allow = ["format", "lint"]
+tools_disallow = ["deploy"]
+"#;
+
+        let cfg = toml::from_str::<ConfigToml>(toml).expect("TOML deserialization should succeed");
+
+        let demo = cfg.mcp_servers.get("demo").expect("server should exist");
+
+        assert_eq!(demo.command, "npx");
+        assert_eq!(demo.args, vec!["-y", "demo-server"]);
+        assert_eq!(
+            demo.tools_allow.as_ref().unwrap(),
+            &vec!["format".to_string(), "lint".to_string()]
+        );
+        assert_eq!(
+            demo.tools_disallow.as_ref().unwrap(),
+            &vec!["deploy".to_string()]
+        );
+    }
+
     struct PrecedenceTestFixture {
         cwd: TempDir,
         codex_home: TempDir,
